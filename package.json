@@ -18,12 +18,12 @@
   "author": "The CTO",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thecto/opencode-debug-plugin.git"
+    "url": "git+https://github.com/MrgSub/opencode-debug.git"
   },
   "bugs": {
-    "url": "https://github.com/thecto/opencode-debug-plugin/issues"
+    "url": "https://github.com/MrgSub/opencode-debug/issues"
   },
-  "homepage": "https://github.com/thecto/opencode-debug-plugin#readme",
+  "homepage": "https://github.com/MrgSub/opencode-debug#readme",
   "keywords": [
     "opencode",
     "opencode-plugin",
