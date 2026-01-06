@@ -4,15 +4,11 @@ A debug plugin for [OpenCode](https://github.com/anomalyco/opencode) that enable
 
 ## Installation
 
-```bash
-bun add opencode-debug
-```
-
 Add the plugin to your OpenCode configuration:
 
 ```json
 {
-  "plugins": ["opencode-debug"]
+  "plugin": ["@thecto/opencode-debug-plugin"]
 }
 ```
 
