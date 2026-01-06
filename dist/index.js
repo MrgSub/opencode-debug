@@ -13186,12 +13186,11 @@ ${output.join(`
 `)}`;
         }
       })
-    }
+    },
+    config: async () => {}
   };
 };
-var src_default = DebugPlugin;
 export {
-  src_default as default,
   configure,
   DebugPlugin
 };

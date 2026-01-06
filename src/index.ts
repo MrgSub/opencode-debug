@@ -279,7 +279,8 @@ export const DebugPlugin: Plugin = async ({ directory }) => {
         },
       }),
     },
+    config: async () => {},
   };
 };
 
-export default DebugPlugin;
+// export default DebugPlugin;

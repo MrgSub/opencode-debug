@@ -10,4 +10,3 @@ export interface PluginConfig {
 }
 export declare function configure(overrides: Partial<PluginConfig>): void;
 export declare const DebugPlugin: Plugin;
-export default DebugPlugin;
