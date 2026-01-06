@@ -23,6 +23,77 @@ const defaultConfig: PluginConfig = {
 
 const config: PluginConfig = { ...defaultConfig };
 
+let debugModeActive = false;
+let activeDebugUrl: string | null = null;
+
+function generateFetchSnippet(
+  url: string,
+  label: string,
+  dataExpr: string = "{}"
+): string {
+  return `fetch("${url}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: "${label}", data: ${dataExpr} }) }).catch(() => {});`;
+}
+
+function getDebugInstructions(debugUrl: string): string {
+  return `
+## Debug Mode Instructions
+
+You are now in DEBUG MODE. Your task is to instrument the codebase with fetch calls to capture runtime data for debugging.
+
+### Workflow:
+1. **Analyze the issue** - Understand what the user is trying to debug
+2. **Identify key locations** - Find functions, handlers, or code paths relevant to the issue
+3. **Insert fetch calls** - Place debug fetch calls at strategic points to capture:
+   - Function inputs/outputs
+   - State changes
+   - Error conditions
+   - Control flow branches
+4. **Hand back to user** - Let them reproduce the issue
+5. **Read logs** - Use debug_read to analyze the captured data
+
+### Fetch Call Pattern:
+\`\`\`javascript
+${generateFetchSnippet(
+  debugUrl,
+  "descriptive-label",
+  "{ variable1, variable2 }"
+)}
+\`\`\`
+
+### Best Practices:
+- Use descriptive labels like "user-login-start", "api-response", "error-caught"
+- Capture relevant variables in the data object
+- Place calls at function entry/exit points
+- Add calls before and after async operations
+- Capture error objects in catch blocks
+- Don't forget to capture the state you're debugging
+
+### Examples:
+\`\`\`javascript
+// At function entry
+${generateFetchSnippet(debugUrl, "processOrder-entry", "{ orderId, items }")}
+
+// Before async call
+${generateFetchSnippet(debugUrl, "api-call-start", "{ endpoint, payload }")}
+
+// After async call
+${generateFetchSnippet(debugUrl, "api-call-complete", "{ response, status }")}
+
+// In catch block
+${generateFetchSnippet(
+  debugUrl,
+  "error-caught",
+  "{ error: err.message, stack: err.stack }"
+)}
+
+// State changes
+${generateFetchSnippet(debugUrl, "state-updated", "{ prevState, nextState }")}
+\`\`\`
+
+### Debug URL: ${debugUrl}
+`;
+}
+
 async function isPortInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     Bun.connect({
@@ -154,7 +225,6 @@ export const DebugPlugin: Plugin = async ({ directory }) => {
       provider: config.authProvider,
       loader: async (getAuth) => {
         const auth = await getAuth();
-        console.log("auth", auth);
         if (auth?.type === "api") storedNgrokToken = auth.key;
         return {};
       },
@@ -176,9 +246,22 @@ export const DebugPlugin: Plugin = async ({ directory }) => {
         },
       ],
     },
+    "experimental.chat.system.transform": async (_input, output) => {
+      if (debugModeActive && activeDebugUrl) {
+        output.system.push(getDebugInstructions(activeDebugUrl));
+      }
+    },
     tool: {
       debug_start: tool({
-        description: "Start the debug HTTP server for remote debugging",
+        description: `Start debug mode to capture runtime data from the codebase.
+
+WORKFLOW:
+1. Call this tool to start the debug server
+2. Insert fetch() calls at strategic locations in the code to capture runtime data
+3. Ask the user to reproduce the issue
+4. Use debug_read to analyze the captured logs and identify the problem
+
+This enables runtime debugging by capturing labeled data points as the code executes.`,
         args: {
           port: tool.schema
             .number()
@@ -189,9 +272,8 @@ export const DebugPlugin: Plugin = async ({ directory }) => {
           if (server) {
             const localUrl = buildDebugUrl(`http://localhost:${server.port}`);
             const publicUrl = tunnel?.url ? buildDebugUrl(tunnel.url) : null;
-            return `Debug server already running!\n\nLocal: ${localUrl}${
-              publicUrl ? `\nPublic: ${publicUrl}` : ""
-            }`;
+            const url = publicUrl ?? localUrl;
+            return `Debug server already running!\n\nDebug URL: ${url}\n\n**Next Step:** Insert fetch() calls in the code where you need to capture data, then ask the user to reproduce the issue.`;
           }
 
           const port = await findAvailablePort(args.port);
@@ -203,27 +285,42 @@ export const DebugPlugin: Plugin = async ({ directory }) => {
           const publicUrl = tunnelUrl ? buildDebugUrl(tunnelUrl) : null;
           const url = publicUrl ?? localUrl;
 
-          const publicLine =
-            publicUrl ?? "N/A (run 'opencode auth' to configure ngrok)";
-          const usage = [
-            `fetch("${url}", {`,
-            `  method: "POST",`,
-            `  headers: { "Content-Type": "application/json" },`,
-            `  body: JSON.stringify({ label: "my-event", data: { optional: "payload" } })`,
-            `})`,
-          ].join("\n");
+          debugModeActive = true;
+          activeDebugUrl = url;
 
-          return [
-            "Debug server started!\n",
-            `Local: ${localUrl}`,
-            `Public: ${publicLine}`,
-            `\nUsage:\n${usage}`,
-            `\nLog file: ${getLogDisplayPath()}`,
-          ].join("\n");
+          const instructions = [
+            "# Debug Mode Started\n",
+            `**Debug URL:** ${url}`,
+            `**Log File:** ${getLogDisplayPath()}`,
+            "",
+            "## Next Steps:",
+            "1. **Instrument the code** - Insert fetch() calls at key locations",
+            "2. **Hand back to user** - Ask them to reproduce the issue",
+            "3. **Read logs** - Use debug_read to analyze captured data",
+            "",
+            "## Fetch Call Template:",
+            "```javascript",
+            generateFetchSnippet(url, "label-here", "{ key: value }"),
+            "```",
+            "",
+            "## Placement Guidelines:",
+            "- Function entry/exit points",
+            "- Before/after async operations",
+            "- Inside catch blocks for errors",
+            "- State changes and variable mutations",
+            "- Conditional branches to trace control flow",
+            "",
+            "Use descriptive labels like 'handleSubmit-entry', 'api-response', 'error-caught'",
+          ];
+
+          return instructions.join("\n");
         },
       }),
       debug_stop: tool({
-        description: "Stop the debug HTTP server",
+        description: `Stop debug mode and preserve the captured logs.
+
+Call this after debugging is complete. The log file is preserved so you can still read it with debug_read.
+Remember to remove the fetch() calls you inserted in the codebase.`,
         args: {},
         async execute() {
           if (!server) {
@@ -231,47 +328,96 @@ export const DebugPlugin: Plugin = async ({ directory }) => {
           }
 
           await stopServer();
-          return `Debug server stopped.\nLog file preserved at: ${getLogDisplayPath()}`;
+          debugModeActive = false;
+          activeDebugUrl = null;
+
+          return [
+            "# Debug Mode Stopped",
+            "",
+            `Log file preserved at: ${getLogDisplayPath()}`,
+            "",
+            "**Remember:** Remove the fetch() debug calls you inserted in the codebase.",
+          ].join("\n");
         },
       }),
       debug_clear: tool({
-        description: "Clear the debug log file",
+        description: `Clear the debug log file to start fresh.
+
+Use this before a new debugging session to remove old log entries.`,
         args: {},
         async execute() {
           const file = Bun.file(LOG_PATH);
           if (await file.exists()) {
             await Bun.write(LOG_PATH, "");
-            return `Debug log cleared: ${getLogDisplayPath()}`;
+            return `Debug log cleared: ${getLogDisplayPath()}\n\nReady for fresh debug data.`;
           }
           return `Debug log does not exist yet: ${getLogDisplayPath()}`;
         },
       }),
       debug_read: tool({
-        description: "Read the debug log file",
+        description: `Read the debug log to analyze captured runtime data.
+
+Use this after the user has reproduced the issue to see what data was captured by your fetch() calls.
+The logs show timestamped entries with labels and data payloads.
+
+Analyze the captured data to:
+- Trace the execution flow
+- Identify unexpected values
+- Find where errors occur
+- Compare expected vs actual behavior`,
         args: {
           tail: tool.schema
             .number()
             .optional()
-            .describe("Only show last N lines"),
+            .describe("Only show last N lines (useful for large logs)"),
         },
         async execute(args) {
           const file = Bun.file(LOG_PATH);
           if (!(await file.exists())) {
-            return "No debug log yet. Start your instrumented code to generate logs.";
+            return "No debug log yet.\n\n**Tip:** Make sure fetch() calls are in place and the user has reproduced the issue.";
           }
 
           const content = await file.text();
           const lines = content.trim().split("\n").filter(Boolean);
 
           if (lines.length === 0) {
-            return "Debug log is empty.";
+            return "Debug log is empty.\n\n**Tip:** The instrumented code paths may not have been executed. Ask the user to reproduce the issue.";
           }
 
           const output =
             args.tail && args.tail > 0 ? lines.slice(-args.tail) : lines;
-          return `Debug Log (${output.length} entries)\n${"=".repeat(
-            40
-          )}\n${output.join("\n")}`;
+
+          return [
+            `# Debug Log (${output.length} entries)`,
+            "=".repeat(50),
+            "",
+            output.join("\n"),
+            "",
+            "=".repeat(50),
+            "**Analyze the above data to identify the issue.**",
+          ].join("\n");
+        },
+      }),
+      debug_status: tool({
+        description: `Check if debug mode is currently active and get the debug URL.`,
+        args: {},
+        async execute() {
+          if (!server || !debugModeActive) {
+            return "Debug mode is **not active**.\n\nUse debug_start to begin a debugging session.";
+          }
+
+          const localUrl = buildDebugUrl(`http://localhost:${server.port}`);
+          const publicUrl = tunnel?.url ? buildDebugUrl(tunnel.url) : null;
+          const url = publicUrl ?? localUrl;
+
+          return [
+            "# Debug Mode Active",
+            "",
+            `**Debug URL:** ${url}`,
+            `**Log File:** ${getLogDisplayPath()}`,
+            "",
+            "Use this URL in your fetch() calls to capture debug data.",
+          ].join("\n");
         },
       }),
     },
