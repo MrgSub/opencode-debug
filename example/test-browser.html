@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Debug Server Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; max-width: 600px; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    #log { background: #1a1a1a; color: #0f0; padding: 15px; margin-top: 20px; white-space: pre-wrap; min-height: 200px; }
+    .ok { color: #0f0; }
+    .fail { color: #f00; }
+  </style>
+</head>
+<body>
+  <h2>Debug Server Browser Test</h2>
+  <p>Port: <input id="port" value="3333" size="6"></p>
+  <button onclick="runTests()">Run All Tests</button>
+  <button onclick="sendCustom()">Send Custom Log</button>
+  <div id="log"></div>
+
+  <script>
+    const log = document.getElementById('log');
+    
+    function getUrl() {
+      return `http://localhost:${document.getElementById('port').value}/debug`;
+    }
+
+    function appendLog(msg, ok) {
+      const span = document.createElement('span');
+      span.className = ok ? 'ok' : 'fail';
+      span.textContent = msg + '\n';
+      log.appendChild(span);
+    }
+
+    async function sendLog(label, data) {
+      try {
+        const res = await fetch(getUrl(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label, data })
+        });
+        return res.ok;
+      } catch (e) {
+        console.error(e);
+        return false;
+      }
+    }
+
+    async function runTests() {
+      log.innerHTML = '';
+      appendLog(`Testing ${getUrl()}...\n`, true);
+
+      const tests = [
+        ['simple-label', undefined],
+        ['browser-click', { x: 100, y: 200, target: 'button' }],
+        ['form-submit', { fields: { name: 'John', email: 'john@test.com' } }],
+        ['error-caught', { error: 'Test error', stack: 'at test.html:50' }],
+        ['state-change', { prev: { loading: true }, next: { loading: false, data: [1,2,3] } }]
+      ];
+
+      let passed = 0;
+      for (const [label, data] of tests) {
+        const ok = await sendLog(label, data);
+        appendLog(`${ok ? 'OK' : 'FAIL'}: ${label}`, ok);
+        if (ok) passed++;
+      }
+
+      appendLog(`\n${passed}/${tests.length} passed`, passed === tests.length);
+    }
+
+    async function sendCustom() {
+      const label = prompt('Label:', 'custom-log');
+      if (!label) return;
+      const dataStr = prompt('Data (JSON):', '{"key": "value"}');
+      let data;
+      try { data = dataStr ? JSON.parse(dataStr) : undefined; } catch { data = dataStr; }
+      const ok = await sendLog(label, data);
+      appendLog(`${ok ? 'OK' : 'FAIL'}: ${label} ${JSON.stringify(data)}`, ok);
+    }
+  </script>
+</body>
+</html>
