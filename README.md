@@ -1,5 +1,7 @@
 # OpenCode Debug Plugin
 
+Last updated: January 13, 2026
+
 A debug plugin for [OpenCode](https://github.com/anomalyco/opencode) that enables runtime debugging by capturing data from instrumented code. Similar to Cursor's debug mode, this plugin allows the agent to insert fetch calls into your codebase, capture runtime data, and analyze it to identify issues.
 
 ## Installation
