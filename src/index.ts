@@ -139,10 +139,16 @@ async function appendToLog(
   await Bun.write(logPath, existing + line);
 }
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 function jsonResponse(data: object, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...corsHeaders },
   });
 }
 
@@ -155,6 +161,11 @@ function createDebugServer(
     async fetch(req) {
       const url = new URL(req.url);
 
+      // Handle CORS preflight requests
+      if (req.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: corsHeaders });
+      }
+
       if (url.pathname === config.healthEndpoint && req.method === "GET") {
         return jsonResponse({ status: "ok" });
       }
@@ -162,13 +173,16 @@ function createDebugServer(
       if (url.pathname === config.endpoint && req.method === "POST") {
         const body = await req.json().catch(() => null);
         if (!body || !body.label) {
-          return new Response("Missing required field: label", { status: 400 });
+          return new Response("Missing required field: label", {
+            status: 400,
+            headers: corsHeaders,
+          });
         }
         await appendToLog(logPath, body.label, body.data);
         return jsonResponse({ received: true });
       }
 
-      return new Response("Not found", { status: 404 });
+      return new Response("Not found", { status: 404, headers: corsHeaders });
     },
   });
 }
